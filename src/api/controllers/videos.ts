@@ -9,6 +9,8 @@ import { getCredit, receiveCredit, request } from "./core.ts";
 import logger from "@/lib/logger.ts";
 import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 import { DEFAULT_ASSISTANT_ID_CN, DEFAULT_VIDEO_MODEL, DRAFT_VERSION, VIDEO_MODEL_MAP } from "@/api/consts/common.ts";
+import { BASE_URL_DREAMINA_US, BASE_URL_IMAGEX_US } from "@/api/consts/dreamina.ts";
+import { log } from "console";
 
 export const DEFAULT_MODEL = DEFAULT_VIDEO_MODEL;
 
@@ -128,6 +130,9 @@ function calculateCRC32(buffer: ArrayBuffer): string {
 
 // 核心上传逻辑：上传二进制buffer到ImageX
 async function _uploadImageBuffer(imageBuffer: ArrayBuffer, refreshToken: string): Promise<string> {
+    // 判断是否为美国区域
+    const isUS = refreshToken.startsWith('us-');
+    
     // 第一步：获取上传令牌
     const tokenResult = await request("post", "/mweb/v1/get_upload_token", refreshToken, {
       data: {
@@ -140,8 +145,8 @@ async function _uploadImageBuffer(imageBuffer: ArrayBuffer, refreshToken: string
       throw new Error("获取上传令牌失败");
     }
     
-    const actualServiceId = service_id || "tb4s082cfz";
-    logger.info(`获取上传令牌成功: service_id=${actualServiceId}`);
+    const actualServiceId = service_id || (isUS ? "wopfjsm1ax" : "tb4s082cfz");
+    logger.info(`获取上传令牌成功: service_id=${actualServiceId}, isUS=${isUS}`);
     
     const fileSize = imageBuffer.byteLength;
     const crc32 = calculateCRC32(imageBuffer);
@@ -153,7 +158,8 @@ async function _uploadImageBuffer(imageBuffer: ArrayBuffer, refreshToken: string
     const timestamp = now.toISOString().replace(/[:\-]/g, '').replace(/\.\d{3}Z$/, 'Z');
     
     const randomStr = Math.random().toString(36).substring(2, 12);
-    const applyUrl = `https://imagex.bytedanceapi.com/?Action=ApplyImageUpload&Version=2018-08-01&ServiceId=${actualServiceId}&FileSize=${fileSize}&s=${randomStr}`;
+    const applyUrlHost = isUS ? BASE_URL_IMAGEX_US : 'https://imagex.bytedanceapi.com';
+    const applyUrl = `${applyUrlHost}/?Action=ApplyImageUpload&Version=2018-08-01&ServiceId=${actualServiceId}&FileSize=${fileSize}&s=${randomStr}`;
     
     const requestHeaders = {
       'x-amz-date': timestamp,
@@ -164,20 +170,14 @@ async function _uploadImageBuffer(imageBuffer: ArrayBuffer, refreshToken: string
     
     logger.info(`申请上传权限: ${applyUrl}`);
     
+    const origin = isUS ? BASE_URL_DREAMINA_US : 'https://jimeng.jianying.com';
     const applyResponse = await fetch(applyUrl, {
       method: 'GET',
       headers: {
         'accept': '*/*',
-        'accept-language': 'zh-CN,zh;q=0.9',
         'authorization': authorization,
-        'origin': 'https://jimeng.jianying.com',
-        'referer': 'https://jimeng.jianying.com/ai-tool/video/generate',
-        'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="132", "Google Chrome";v="132"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'cross-site',
+        'origin': origin,
+        'referer': `${origin}/ai-tool/video/generate`,
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         'x-amz-date': timestamp,
         'x-amz-security-token': session_token,
@@ -217,17 +217,13 @@ async function _uploadImageBuffer(imageBuffer: ArrayBuffer, refreshToken: string
       method: 'POST',
       headers: {
         'Accept': '*/*',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
         'Authorization': auth,
         'Connection': 'keep-alive',
         'Content-CRC32': crc32,
         'Content-Disposition': 'attachment; filename="undefined"',
         'Content-Type': 'application/octet-stream',
-        'Origin': 'https://jimeng.jianying.com',
-        'Referer': 'https://jimeng.jianying.com/ai-tool/video/generate',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'cross-site',
+        'Origin': origin,
+        'Referer': `${origin}/ai-tool/video/generate`,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         'X-Storage-U': '704135154117550',
       },
@@ -242,7 +238,8 @@ async function _uploadImageBuffer(imageBuffer: ArrayBuffer, refreshToken: string
     logger.info(`图片文件上传成功`);
     
     // 第四步：提交上传
-    const commitUrl = `https://imagex.bytedanceapi.com/?Action=CommitImageUpload&Version=2018-08-01&ServiceId=${actualServiceId}`;
+    const commitUrlHost = isUS ? BASE_URL_IMAGEX_US : 'https://imagex.bytedanceapi.com';
+    const commitUrl = `${commitUrlHost}/?Action=CommitImageUpload&Version=2018-08-01&ServiceId=${actualServiceId}`;
     
     const commitTimestamp = new Date().toISOString().replace(/[:\-]/g, '').replace(/\.\d{3}Z$/, 'Z');
     const commitPayload = JSON.stringify({
@@ -264,17 +261,10 @@ async function _uploadImageBuffer(imageBuffer: ArrayBuffer, refreshToken: string
       method: 'POST',
       headers: {
         'accept': '*/*',
-        'accept-language': 'zh-CN,zh;q=0.9',
         'authorization': commitAuthorization,
         'content-type': 'application/json',
-        'origin': 'https://jimeng.jianying.com',
-        'referer': 'https://jimeng.jianying.com/ai-tool/video/generate',
-        'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="132", "Google Chrome";v="132"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'cross-site',
+        'origin': origin,
+        'referer': `${origin}/ai-tool/video/generate`,
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         'x-amz-date': commitTimestamp,
         'x-amz-security-token': session_token,
@@ -504,7 +494,7 @@ export async function generateVideo(
       },
       data: {
         "extend": {
-          "root_model": end_frame_image ? MODEL_MAP['jimeng-video-3.0'] : model,
+          "root_model": end_frame_image ? VIDEO_MODEL_MAP['jimeng-video-3.0'] : model,
           "m_video_commerce_info": {
             benefit_type: "basic_video_operation_vgfm_v_three",
             resource_id: "generate_video",
@@ -648,6 +638,7 @@ export async function generateVideo(
       // 检查结果是否有效
       let historyData;
       
+      logger.info(`返回内容: ${JSON.stringify(result)}`);
       if (useAlternativeApi && result.history_records && result.history_records.length > 0) {
         // 处理备用API返回的数据格式
         historyData = result.history_records[0];
@@ -656,6 +647,10 @@ export async function generateVideo(
         // 处理标准API返回的数据格式
         historyData = result.history_list[0];
         logger.info(`从标准API获取到历史记录`);
+      } else if (result[historyId] && result[historyId].item_list && result[historyId].item_list.length > 0) {
+        // 处理新的数据格式：result是一个对象，键是historyId
+        historyData = result[historyId];
+        logger.info(`从新格式API获取到历史记录`);
       } else {
         // 两种API都没有返回有效数据
         logger.warn(`历史记录不存在，重试中 (${retryCount + 1}/${maxRetries})... 历史ID: ${historyId}`);
