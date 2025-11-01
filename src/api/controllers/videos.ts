@@ -638,7 +638,7 @@ export async function generateVideo(
       // 检查结果是否有效
       let historyData;
       
-      logger.info(`返回内容: ${JSON.stringify(result)}`);
+      // logger.info(`返回内容: ${JSON.stringify(result)}`);
       if (useAlternativeApi && result.history_records && result.history_records.length > 0) {
         // 处理备用API返回的数据格式
         historyData = result.history_records[0];
